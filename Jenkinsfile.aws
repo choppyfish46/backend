@@ -1,0 +1,234 @@
+#!groovy
+@Library('ddo-pipeline-library') _
+
+// Config =========================
+slackURL = 'https://hooks.slack.com/services/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'
+slackNotificationChannel = "jenkins"
+//branch = "${env.BRANCH_NAME}" --- commented for debugging 
+branch = "develop"
+
+env.MAVEN_PROJECT_BRANCH = "${env.BRANCH_NAME}" // needed to use maven-git-versioning-extension in headless mode
+short_branch = "${env.BRANCH_NAME}".replaceAll("/","-")
+serviceName = 'navify-ow-bootstrap'
+
+awsCredentialsId = 'ow-deployer.creds'
+awsRegion = 'us-east-1'
+ecrUrl = 'https://095884898774.dkr.ecr.us-east-1.amazonaws.com'
+owecrUrl = 'https://095884898774.dkr.ecr.us-east-1.amazonaws.com'
+
+//owecrUrl = 'https://923449152633.dkr.ecr.us-west-2.amazonaws.com'
+//ecrUrl = 'https://121749245160.dkr.ecr.us-west-2.amazonaws.com'
+
+
+service = serviceName + '-microservice'
+docker_image_name = serviceName
+echo "docker_image_name is ${docker_image_name}"
+develop_branch = "develop" //changed to test if working with Master
+release_branch = "release"
+if (branch.startsWith(release_branch)) {
+    ddo_branch = "${branch}"
+} else {
+    ddo_branch = "develop"
+}
+
+configFileId = "44ba7186-c2e9-447c-92cb-4e56a1a3d968"
+
+properties([
+    disableConcurrentBuilds(),
+    buildDiscarder(logRotator(daysToKeepStr: '7', numToKeepStr: '10'))
+])
+
+// Stages =========================
+node('docker-host') {
+
+    step([$class: 'WsCleanup'])
+
+    timestamps {
+        try {
+            stage('Checkout') {
+
+                dir(service) {
+                    checkout()
+
+                }
+            }
+
+            dir(service) {
+                docker.image('localstack/localstack:0.8.7').withRun(
+                                                            '-e SERVICES=s3:4572,sqs:4576 ' +
+                                                            '-e DEFAULT_REGION=us-west-2 ' +
+                                                            '-e HOSTNAME_EXTERNAL=s3.localstack.navify ' +
+                                                            '--expose 4570-4576 ')
+                   {  l ->
+                        docker.image(ecrUrl.replace("https://","")+'/ddo-jenkins-slave-centos-saas:latest').inside(
+                          "--link ${l.id}:s3.localstack.navify " +
+                          '-v /opt/jenkins-slave/m2_repo:/root/.m2') {
+                            withEnv([]) {
+
+                                stage('Unit Tests') {
+                                   // unitTests()
+                                }
+
+                                // this is commented as media needs special ec2 env for
+                                // running int tests
+                                stage('Integration Tests') {
+                                //    integrationTests()
+                                }
+
+                                stage('Publish Results') {
+                                   // publishResults()
+                                }
+
+                                stage('Sonar Analysis') {
+                                    //sonarAnalysis()
+                                }
+
+                                stage('CodeAnalysis') {
+                                    whitesource()
+                                }
+
+                                stage('Deploy (to Artifactory)') {
+                                    echo 'before should deploy'
+                                    if (shouldDeploy()) {
+                                        deployToArtifactory()
+                                    }
+                                }
+                            }
+                        }
+
+                }
+
+                if (shouldDeploy()) {
+                    echo 'in should deploy'
+                    image_tag = genImageTag fileId: configFileId
+
+                    stage('Build/Test/Push image to registry') {
+                        sh "cp target/*-SNAPSHOT.jar infra/docker/" //change file from war to jar
+                        dir('infra/docker') {
+                            imageToRegistry(image_tag)
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            println("Caught exception: " + e)
+            error = catchException exception: e
+        } finally {
+            println("CurrentBuild result: " + currentBuild.result)
+        }
+    }
+}
+
+boolean shouldDeploy() {
+    echo 'should deploy boolean'
+    print develop_branch
+    print branch
+    return branch == develop_branch //|| branch.startsWith(release_branch) || branch.endsWith("-deployable")
+
+
+}
+
+ def unitTests(boolean skip = false) {
+    if (skip) {
+        echo "skip unit tests"
+    } else {
+        mavenHelper fileId: configFileId, options: 'clean',
+            extraParams: '-Borg.jacoco:jacoco-maven-plugin:prepare-agent test -P jenkins'
+    }
+}
+
+/*
+
+def integrationTests(boolean skip = false) {
+    if (skip) {
+        echo "skip integration tests"
+    } else {
+        mavenHelper fileId: configFileId, options: 'integration-test verify',
+            extraParams: '-Dspring.profiles.active=no-sec'
+    }
+}
+
+def publishResults(boolean skip = false) {
+    if (skip) {
+        echo "skip publish results"
+    } else {
+        publishResults skipArchive: true
+    }
+}
+*/
+def sonarAnalysis(boolean skip = false) {
+    if (skip) {
+        echo "Skip Sonar Analysis."
+        return
+    }
+    sonarBranchParams = '-Dsonar.branch.name=' + branch
+    echo 'printing sonarBranchParams'
+    println sonarBranchParams
+    /* if (branch != develop_branch && !branch.startsWith(release_branch)) {
+        sonarBranchParams = sonarBranchParams + ' -Dsonar.branch.target=' + develop_branch
+
+    } */
+    checkUrlStatus url: "http://sonar.intranet.roche.com/batch/index"
+    withSonarQubeEnv('sonar-roche') {
+        mavenHelper fileId: configFileId, options: 'sonar:sonar ' + sonarBranchParams
+    }
+}
+
+def whitesource(boolean skip = false) {
+    if (skip) {
+        echo "skip whitesource"
+    } else {
+        if (branch == develop_branch || branch.startsWith(release_branch)) {
+            mavenHelper fileId: configFileId, options: 'whitesource:update'
+        } else {
+            mavenHelper fileId: configFileId, options: 'whitesource:checkPolicies'
+        }
+    }
+}
+
+
+
+def deployToArtifactory(boolean skip = false) {
+    if (skip) {
+        echo "skip deploy to artifactory"
+    } else {
+        mavenHelper fileId: configFileId, options: '-DskipTests', extraParams: '-B source:jar deploy'
+    }
+}
+
+def imageToRegistry(image_tag) {
+    withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: awsCredentialsId, usernameVariable: 'ACCESS_KEY', passwordVariable: 'SECRET_KEY']]) {
+
+        sh(script: "AWS_ACCESS_KEY_ID=${ACCESS_KEY} AWS_SECRET_ACCESS_KEY=${SECRET_KEY} AWS_DEFAULT_REGION=${awsRegion} ../pipeline/scripts/create-repository.sh ${docker_image_name} ${awsRegion} ")
+
+        // docker.withRegistry(owecrUrl, awsCredentialsId) {
+            def login_cmd = sh(script: "AWS_ACCESS_KEY_ID=${ACCESS_KEY} AWS_SECRET_ACCESS_KEY=${SECRET_KEY} AWS_DEFAULT_REGION=${awsRegion} aws ecr get-login --no-include-email", returnStdout: true)
+            sh "#!/bin/sh -e\n ${login_cmd}"
+            new_image = docker.build(docker_image_name)
+            sh "docker images ${docker_image_name}"
+            sh "docker tag oncologyworkflowui-fhirui:latest 095884898774.dkr.ecr.us-east-1.amazonaws.com/oncologyworkflowui-fhirui:latest"
+            sh "docker push 095884898774.dkr.ecr.us-east-1.amazonaws.com/oncologyworkflowui-fhirui:latest"
+        // }
+    }
+}
+
+def downloadAppdAgent() {
+    // Assumes that we are within ${serviceName} directory already
+   withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: awsCredentialsId, usernameVariable: 'ACCESS_KEY', passwordVariable: 'SECRET_KEY']]) {
+
+        sh(script: "AWS_ACCESS_KEY_ID=${ACCESS_KEY} AWS_SECRET_ACCESS_KEY=${SECRET_KEY} AWS_DEFAULT_REGION=${awsRegion} aws s3 cp s3://dis-appd/appd-java-agent-20180918.tgz appd-package.tgz ")
+        sh "tar -xzvf appd-package.tgz -C infra/docker/"
+        sh "rm appd-package.tgz"
+
+    }
+}
+
+def checkout() {
+    checkout scm
+    echo 'Pulling... ' + env.GIT_BRANCH
+    def commit = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+    env.GIT_COMMIT = commit
+}
+
+
+

@@ -1,0 +1,29 @@
+awsCredentialsId = 'f841e627-5f99-4023-b278-8a1d95590d4c'
+
+node('docker-host')  {
+     step([$class: 'WsCleanup'])
+    def k8sImage = docker.image('pahud/eks-kubectl-docker')
+    
+    stage('Clone repository') {
+       
+        checkout scm
+    }
+
+    stage('configure K8 env') {
+       
+         k8sImage.inside{
+          withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
+                        credentialsId: awsCredentialsId,
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',  
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']])
+
+            {
+           sh 'AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} AWS_DEFAULT_REGION=us-west-2  CLUSTER_NAME=ow-eksctl'    
+           sh 'aws eks --region us-west-2 update-kubeconfig --name ow-eksctl'
+           sh 'echo "WORKSPACE" :: $WORKSPACE'
+           sh 'kubectl get all'
+           sh 'kubectl apply -f deploy2K8s/deploy.yml'
+            }
+          }  
+    }
+}
