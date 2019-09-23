@@ -1,0 +1,72 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ow-bootstrap-service
+  namespace: dev02
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: ow-bootstrap-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bootstrap-service-env
+  namespace: dev02
+data:
+  APPDYNAMICS_CONTROLLER_HOST_NAME: roche-test.saas.appdynamics.com
+  APPDYNAMICS_CONTROLLER_PORT: "443"
+  APPDYNAMICS_CONTROLLER_SSL_ENABLED: "true"
+  APPDYNAMICS_AGENT_APPLICATION_NAME: navify-ow-bootstrap-service
+  APPDYNAMICS_AGENT_TIER_NAME: navify-ow-bootstrap-Astack
+  APPDYNAMICS_AGENT_ACCOUNT_NAME: roche-test
+  APPDYNAMICS_AGENT_ACCOUNT_ACCESS_KEY: b7c6c2fe-48a3-405b-9075-ad836547e70c
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ow-bootstrap-service
+  namespace: dev02
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ow-bootstrap-service
+  template:
+    metadata:
+      labels:
+        app: ow-bootstrap-service
+    spec:
+      containers:
+      - name: ow-bootstrap-service
+        image: 923449152633.dkr.ecr.us-west-2.amazonaws.com/navify-ow-bootstrap:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+          - configMapRef:
+              name: bootstrap-service-env
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ow-bootstrap-service
+  namespace: dev02
+  annotations:
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/healthcheck-path: "/"
+    alb.ingress.kubernetes.io/success-codes: "200,404"
+    alb.ingress.kubernetes.io/scheme: "internet-facing"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        backend:
+          serviceName: ow-bootstrap-service
+          servicePort: 80
