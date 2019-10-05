@@ -218,7 +218,7 @@ def downloadAppdAgent() {
     // Assumes that we are within ${serviceName} directory already
     withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: awsCredentialsId, usernameVariable: 'ACCESS_KEY', passwordVariable: 'SECRET_KEY']]) {
 
-        sh(script: "AWS_ACCESS_KEY_ID=${ACCESS_KEY} AWS_SECRET_ACCESS_KEY=${SECRET_KEY} AWS_DEFAULT_REGION=${awsRegion} aws s3 cp s3://ow-appd/appd-java-agent-20180918.tgz appd-package.tgz ")
+        sh(script: "AWS_ACCESS_KEY_ID=${ACCESS_KEY} AWS_SECRET_ACCESS_KEY=${SECRET_KEY} AWS_DEFAULT_REGION=${awsRegion} aws s3 cp s3://djonesow-appd/appd-java-agent-20197540918.tgz appd-package.tgz ")
         sh "tar -xzvf appd-package.tgz -C infra/docker/"
         sh "rm appd-package.tgz"
         echo "Downloaded App Dynamics agent from S3"
