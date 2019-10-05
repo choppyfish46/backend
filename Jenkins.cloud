@@ -3,7 +3,7 @@
 
 // Config =========================
 slackURL = 'https://hooks.slack.com/services/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'
-slackNotificationChannel = "ow-devops-notifications"
+slackNotificationChannel = "devops-notifications"
 //branch = "${env.BRANCH_NAME}"
 branch = "develop"
 
@@ -11,12 +11,12 @@ env.MAVEN_PROJECT_BRANCH = "${env.BRANCH_NAME}" // needed to use maven-git-versi
 short_branch = "${env.BRANCH_NAME}".replaceAll("/","-")
 serviceName = 'navify-ow-bootstrap'
 
-awsCredentialsId = 'ow-deployer.creds'
-dockerCredentialsId = 'ow-docker-login.creds'
+awsCredentialsId = 'deployer.creds'
+dockerCredentialsId = 'docker-login.creds'
 awsRegion = 'us-west-2'
 
-ecrUrl = 'https://095884898774.dkr.ecr.us-east-1.amazonaws.com'
-owecrUrl = 'https://923449152633.dkr.ecr.us-west-2.amazonaws.com'
+ecrUrl = 'https://111111774.dkr.ecr.us-east-1.amazonaws.com'
+owecrUrl = 'https://923423433.dkr.ecr.us-west-2.amazonaws.com'
 
 
 service = serviceName + '-microservice'
@@ -30,7 +30,7 @@ if (branch.startsWith(release_branch)) {
     ddo_branch = "develop"
 }
 
-configFileId = "44ba7186-c2e9-447c-92cb-4e56a1a3d968"
+configFileId = "44ba78d456677788186-c2e9-447c-926cdredcb-4e56a1a3d968"
 
 properties([
     disableConcurrentBuilds(),
@@ -236,8 +236,7 @@ def checkout() {
 
 def emailnotify() {
 
-            mail to: 'durgesh.manohar@contractors.roche.com, david.becker.db2@contractors.roche.com ,dhwan.shah@contractors.roche.com, diwakar.chapagain@contractors.roche.com, lakshmikiran.jasthi@contractors.roche.com,motumarri.krishna_teja@contractors.roche.com, prateek.patil@contractors.roche.com , raj.kesavan@roche.com, raman.ramanathan@roche.com, sambasivarao.byrapuneni@roche.com, sarvesh.padwal@contractors.roche.com, sudheer.sangaraju@contractors.roche.com, uday_kumar.goshika@contractors.roche.com ', from: 'durgesh.manohar@contractors.roche.com',
-            subject: "Build: ${env.JOB_NAME}",
+            
              body: "Job status - \"${env.JOB_NAME}\" build: ${env.BUILD_NUMBER}\n\nView the log at:\n ${env.BUILD_URL}\n\nBlue Ocean:\n${env.RUN_DISPLAY_URL}"
         }
 
